@@ -72,6 +72,7 @@ func NewThrottleCheckResult(throttle bool, reason string, reasonHint ThrottleRea
 
 // MigrationContext has the general, global state of migration. It is used by
 // all components throughout the migration process.
+// 核心结构体，记录了很多参数和状态，在很多地方都会用
 type MigrationContext struct {
 	Uuid string
 
@@ -95,9 +96,9 @@ type MigrationContext struct {
 	AliyunRDS                bool
 	GoogleCloudPlatform      bool
 
-	config            ContextConfig
-	configMutex       *sync.Mutex
-	ConfigFile        string
+	config            ContextConfig //读取的配置文件里的配置，结构体
+	configMutex       *sync.Mutex   //给配置文件加的锁，比如平滑重启的时候需要重载配置文件
+	ConfigFile        string        // 配置文件路径
 	CliUser           string
 	CliPassword       string
 	UseTLS            bool
@@ -192,7 +193,7 @@ type MigrationContext struct {
 	UserCommandedUnpostponeFlag            int64
 	CutOverCompleteFlag                    int64
 	InCutOverCriticalSectionFlag           int64
-	PanicAbort                             chan error
+	PanicAbort                             chan error // 用来存error的管道，程序出了错就把error扔到管道里，然后监听到了写如日志
 
 	OriginalTableColumnsOnApplier    *sql.ColumnList
 	OriginalTableColumns             *sql.ColumnList
@@ -684,6 +685,7 @@ func (this *MigrationContext) AddThrottleControlReplicaKey(key mysql.InstanceKey
 }
 
 // ApplyCredentials sorts out the credentials between the config file and the CLI flags
+// 用来给mysql.Connection填充连接属性的
 func (this *MigrationContext) ApplyCredentials() {
 	this.configMutex.Lock()
 	defer this.configMutex.Unlock()
@@ -706,27 +708,32 @@ func (this *MigrationContext) ApplyCredentials() {
 
 func (this *MigrationContext) SetupTLS() error {
 	if this.UseTLS {
+		// mysql包ConnectionConfig结构体的UseTLS方法，是用来与mysql建立TLS传输协议的，是mysql加密传输协议
 		return this.InspectorConnectionConfig.UseTLS(this.TLSCACertificate, this.TLSCertificate, this.TLSKey, this.TLSAllowInsecure)
 	}
 	return nil
 }
 
+// 读取配置文件，在启动和平滑重启的时候 会用到
 // ReadConfigFile attempts to read the config file, if it exists
 func (this *MigrationContext) ReadConfigFile() error {
+	// 给结构体加互斥锁
 	this.configMutex.Lock()
 	defer this.configMutex.Unlock()
-
+	// 如果没有配置config文件的路径，则直接返回
 	if this.ConfigFile == "" {
 		return nil
 	}
 	gcfg.RelaxedParserMode = true
 	gcfgscanner.RelaxedScannerMode = true
+	// 解析配置文件，把配置文件内容解析道this.config ContextConfig类型的结构体里面
 	if err := gcfg.ReadFileInto(&this.config, this.ConfigFile); err != nil {
 		return fmt.Errorf("Error reading config file %s. Details: %s", this.ConfigFile, err.Error())
 	}
 
 	// We accept user & password in the form "${SOME_ENV_VARIABLE}" in which case we pull
 	// the given variable from os env
+	// 获取环境变量的
 	if submatch := envVariableRegexp.FindStringSubmatch(this.config.Client.User); len(submatch) > 1 {
 		this.config.Client.User = os.Getenv(submatch[1])
 	}

@@ -1,6 +1,10 @@
 /*
    Copyright 2016 GitHub Inc.
 	 See https://github.com/github/gh-ost/blob/master/LICENSE
+
+	主要是用来在binlog迁移时，对binlog 对dml语句进行转换的，以及数据库 表名校验 语法完整性校验等
+
+
 */
 
 package sql
@@ -73,6 +77,10 @@ func BuildValueComparison(column string, value string, comparisonSign ValueCompa
 	return comparison, err
 }
 
+/*
+	用来拼 binlog中 dml的等值条件的，因为是row格式，所以全部都用 and拼接
+*/
+
 func BuildEqualsComparison(columns []string, values []string) (result string, err error) {
 	if len(columns) == 0 {
 		return "", fmt.Errorf("Got 0 columns in GetEqualsComparison")
@@ -93,6 +101,10 @@ func BuildEqualsComparison(columns []string, values []string) (result string, er
 	result = fmt.Sprintf("(%s)", result)
 	return result, nil
 }
+
+/*
+	根据传过来的colums 的列表，先获取值，在将colums 和valus 调用 BuildEqualsComparison 拼起来
+*/
 
 func BuildEqualsPreparedComparison(columns []string) (result string, err error) {
 	values := buildPreparedValues(len(columns))
@@ -405,6 +417,11 @@ func BuildDMLDeleteQuery(databaseName, tableName string, tableColumns, uniqueKey
 	if err != nil {
 		return result, uniqueKeyArgs, err
 	}
+
+	/*
+	 delete 语句进行转换的地方，转换成delete 语句
+	*/
+
 	result = fmt.Sprintf(`
 			delete /* gh-ost %s.%s */
 				from
@@ -442,6 +459,10 @@ func BuildDMLInsertQuery(databaseName, tableName string, tableColumns, sharedCol
 		mappedSharedColumnNames[i] = EscapeName(mappedSharedColumnNames[i])
 	}
 	preparedValues := buildColumnsPreparedValues(mappedSharedColumns)
+
+	/*
+		insert 转换成replace 语句
+	*/
 
 	result = fmt.Sprintf(`
 			replace /* gh-ost %s.%s */ into
@@ -494,6 +515,11 @@ func BuildDMLUpdateQuery(databaseName, tableName string, tableColumns, sharedCol
 	setClause, err := BuildSetPreparedClause(mappedSharedColumns)
 
 	equalsComparison, err := BuildEqualsPreparedComparison(uniqueKeyColumns.Names())
+
+	/*
+		update 转换成update 语句
+	*/
+
 	result = fmt.Sprintf(`
  			update /* gh-ost %s.%s */
  					%s.%s

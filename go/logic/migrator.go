@@ -62,13 +62,17 @@ const (
 
 // Migrator is the main schema migration flow manager.
 type Migrator struct {
-	parser           *sql.Parser
-	inspector        *Inspector
-	applier          *Applier
-	eventsStreamer   *EventsStreamer
-	server           *Server
-	throttler        *Throttler
-	hooksExecutor    *HooksExecutor
+	parser         *sql.Parser
+	inspector      *Inspector
+	applier        *Applier
+	eventsStreamer *EventsStreamer
+	server         *Server
+	throttler      *Throttler
+	hooksExecutor  *HooksExecutor // logic.HooksExecutor
+	/*
+		HooksExecutor就一个属性migrationContext，就是*base.MigrationContext指针类型，也没有做copy
+		公用的初始化的*base.MigrationContext结构体
+	*/
 	migrationContext *base.MigrationContext
 
 	firstThrottlingCollected   chan bool
@@ -107,6 +111,7 @@ func NewMigrator(context *base.MigrationContext) *Migrator {
 // initiateHooksExecutor
 func (this *Migrator) initiateHooksExecutor() (err error) {
 	this.hooksExecutor = NewHooksExecutor(this.migrationContext)
+	// 空方法
 	if err := this.hooksExecutor.initHooks(); err != nil {
 		return err
 	}
@@ -247,6 +252,7 @@ func (this *Migrator) onChangelogStateEvent(dmlEvent *binlog.BinlogDMLEvent) (er
 }
 
 // listenOnPanicAbort aborts on abort request
+// 参考Migrate()主方法里的注释
 func (this *Migrator) listenOnPanicAbort() {
 	err := <-this.migrationContext.PanicAbort
 	log.Fatale(err)
@@ -313,18 +319,21 @@ func (this *Migrator) createFlagFiles() (err error) {
 }
 
 // Migrate executes the complete migration logic. This is *the* major gh-ost function.
+// 主要的迁移函数，逻辑全在里面
 func (this *Migrator) Migrate() (err error) {
 	log.Infof("Migrating %s.%s", sql.EscapeName(this.migrationContext.DatabaseName), sql.EscapeName(this.migrationContext.OriginalTableName))
+	// 获取时间和主机名
 	this.migrationContext.StartTime = time.Now()
 	if this.migrationContext.Hostname, err = os.Hostname(); err != nil {
 		return err
 	}
-
+	// 用来监听 base包MigrationContext类PanicAbort管道，程序运行时后，用来监听error管道的
 	go this.listenOnPanicAbort()
-
+	// 初始化Migrator.hooksExecutor属性，是*logic.HooksExecutor类型
 	if err := this.initiateHooksExecutor(); err != nil {
 		return err
 	}
+	// 调用*HooksExecutor.executeHooks方法，运行系统gh-ost-on-startup命令
 	if err := this.hooksExecutor.onStartup(); err != nil {
 		return err
 	}

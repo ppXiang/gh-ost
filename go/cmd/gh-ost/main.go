@@ -23,7 +23,9 @@ import (
 var AppVersion string
 
 // acceptSignals registers for OS signals
+// 根据os的信号，平滑重启ghost 重载配置文件
 func acceptSignals(migrationContext *base.MigrationContext) {
+	// 创建用于接受信号的队列
 	c := make(chan os.Signal, 1)
 
 	signal.Notify(c, syscall.SIGHUP)
@@ -241,6 +243,7 @@ func main() {
 	if err := migrationContext.ReadCriticalLoad(*criticalLoad); err != nil {
 		log.Fatale(err)
 	}
+	// 如果没有给定ghost的socket，则自动生成一个名字
 	if migrationContext.ServeSocketFile == "" {
 		migrationContext.ServeSocketFile = fmt.Sprintf("/tmp/gh-ost.%s.%s.sock", migrationContext.DatabaseName, migrationContext.OriginalTableName)
 	}
@@ -252,18 +255,27 @@ func main() {
 		}
 		migrationContext.CliPassword = string(bytePassword)
 	}
+	// 调用对象方法，对一些属性做调整对
 	migrationContext.SetHeartbeatIntervalMilliseconds(*heartbeatIntervalMillis)
 	migrationContext.SetNiceRatio(*niceRatio)
+	// 拷贝chunk对大小，只有[100,100000]
 	migrationContext.SetChunkSize(*chunkSize)
+	// 应用dml对速度[1,1000]
 	migrationContext.SetDMLBatchSize(*dmlBatchSize)
+	// 最大延迟阈值ms，[100,)
 	migrationContext.SetMaxLagMillisecondsThrottleThreshold(*maxLagMillis)
+	// 查询阈值，当源 查询到达多少时候，停止迁移操作
 	migrationContext.SetThrottleQuery(*throttleQuery)
 	migrationContext.SetThrottleHTTP(*throttleHTTP)
+	// ghost 退出之前最大重试次数
 	migrationContext.SetDefaultNumRetries(*defaultRetries)
+	// 用来调整命令行参数和配置文件参数对
 	migrationContext.ApplyCredentials()
+	// 建立与mysql的加密传输协议（TLS）
 	if err := migrationContext.SetupTLS(); err != nil {
 		log.Fatale(err)
 	}
+	// 应该是rename的最大超时时间，是[1,10]秒，超过了就会报错退出； cutOverLockTimeoutSeconds 这个参数是  尝试切换时在表上保持锁的最大秒数（当锁超过超时时重试）
 	if err := migrationContext.SetCutOverLockTimeoutSeconds(*cutOverLockTimeoutSeconds); err != nil {
 		log.Errore(err)
 	}
@@ -272,9 +284,11 @@ func main() {
 	}
 
 	log.Infof("starting gh-ost %+v", AppVersion)
+	// 启动信号监听
 	acceptSignals(migrationContext)
-
+	// 初始化Migrator这个结构体的
 	migrator := logic.NewMigrator(migrationContext)
+	// 迁移逻辑开始，主逻辑
 	err := migrator.Migrate()
 	if err != nil {
 		migrator.ExecOnFailureHook()

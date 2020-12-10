@@ -47,6 +47,7 @@ func (this *HooksExecutor) initHooks() error {
 	return nil
 }
 
+// 从migrationContext这个结构体里面初始化环境变量
 func (this *HooksExecutor) applyEnvironmentVariables(extraVariables ...string) []string {
 	env := os.Environ()
 	env = append(env, fmt.Sprintf("GH_OST_DATABASE_NAME=%s", this.migrationContext.DatabaseName))
@@ -76,10 +77,14 @@ func (this *HooksExecutor) applyEnvironmentVariables(extraVariables ...string) [
 
 // executeHook executes a command, and sets relevant environment variables
 // combined output & error are printed to gh-ost's standard error.
+// 运行系统命令hook，并且通过applyEnvironmentVariables设置运行时的环境变量
 func (this *HooksExecutor) executeHook(hook string, extraVariables ...string) error {
+	// 生成hook这个命令对象，返回*cmd
 	cmd := exec.Command(hook)
+	// 设置这个命令执行时的环境变量
 	cmd.Env = this.applyEnvironmentVariables(extraVariables...)
 
+	// 执行命令并返回标准输出和错误输出合并的切片，这里是运行命令，并且获取返回值
 	combinedOutput, err := cmd.CombinedOutput()
 	fmt.Fprintln(os.Stderr, string(combinedOutput))
 	return log.Errore(err)
@@ -107,8 +112,8 @@ func (this *HooksExecutor) executeHooks(baseName string, extraVariables ...strin
 	}
 	return nil
 }
-
 func (this *HooksExecutor) onStartup() error {
+	// 常量onStartup="gh-ost-on-startup"
 	return this.executeHooks(onStartup)
 }
 

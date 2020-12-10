@@ -21,6 +21,7 @@ const (
 )
 
 // ConnectionConfig is the minimal configuration required to connect to a MySQL server
+// 连接mysql服务的配置
 type ConnectionConfig struct {
 	Key        InstanceKey
 	User       string
